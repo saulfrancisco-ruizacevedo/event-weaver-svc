@@ -1,0 +1,58 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output of the go build command
+*.out
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Dependency directories (remove if you’re using vendoring)
+vendor/
+
+# Build artifacts
+bin/
+dist/
+
+# Coverage files
+*.cover
+coverage.out
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+
+# =========================
+# Editor & IDE settings
+# =========================
+
+# VS Code
+.vscode/
+.history/
+*.code-workspace
+
+# IntelliJ / GoLand
+.idea/
+
+# Vim / Emacs / JetBrains
+*.swp
+*.swo
+*~
+
+# ENV
+.env
+!.env.sample
+
+# MAC DS
+.DS_Store
