@@ -15,14 +15,16 @@ func NewNeo4jDriver(cfg *config.Config) (neo4j.Driver, error) {
 		panic(err)
 	}
 
-	err = driver.VerifyConnectivity(context.Background())
+	session := driver.NewSession(context.Background(), neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeRead,
+		DatabaseName: cfg.DBName,
+	})
+	defer session.Close(context.Background())
 
-	if err != nil {
-		panic(err)
-
-	} else {
-		log.Info().Msg("Successfully connected to Neo4j database")
+	if _, err := session.Run(context.Background(), "RETURN 1", nil); err != nil {
+		return nil, err
 	}
 
+	log.Info().Msgf("Successfully connected to Neo4j database '%s'", cfg.DBName)
 	return driver, nil
 }

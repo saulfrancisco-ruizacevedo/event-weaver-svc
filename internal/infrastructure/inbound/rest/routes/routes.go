@@ -13,5 +13,6 @@ func RegisterRoutes(app *di.App, router *gin.Engine) {
 	apiGroup := router.Group(fmt.Sprintf("/%s", BasePath))
 	{
 		app.SpecController.RegisterRoutes(apiGroup)
+		app.GraphController.RegisterRoutes(apiGroup)
 	}
 }

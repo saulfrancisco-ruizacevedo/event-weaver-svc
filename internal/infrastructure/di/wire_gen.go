@@ -11,6 +11,8 @@ import (
 	neo4j2 "github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/commands"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/commands/handlers"
+	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/queries"
+	handlers2 "github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/queries/handlers"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/domain/component"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/domain/domainentity"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/domain/event"
@@ -27,6 +29,7 @@ import (
 
 func InitializeMediator() (*App, error) {
 	specController := rest.NewSpecController()
+	graphController := rest.NewGraphController()
 	configConfig := config.NewConfig()
 	driver, err := neo4j.NewNeo4jDriver(configConfig)
 	if err != nil {
@@ -39,10 +42,21 @@ func InitializeMediator() (*App, error) {
 	iEventRepository := NewEventRepository(driver, configConfig)
 	specValidationCommandHandler := handlers.NewSpecValidationCommandHandler(iTeamRepository, iComponentRepository, iDomainRepository, iTopicRepository, iEventRepository)
 	specPersistenceCommandHandler := handlers.NewSpecPersistenceCommandHandler(iTeamRepository, iComponentRepository, iDomainRepository, iTopicRepository, iEventRepository)
-	mediatorInitializer := RegisterCommandHandlers(specValidationCommandHandler, specPersistenceCommandHandler)
+	getDomainsQueryHandler := handlers2.NewGetDomainsQueryHandler(iDomainRepository)
+	getTeamsQueryHandler := handlers2.NewGetTeamsQueryHandler(iTeamRepository)
+	getComponentsQueryHandler := handlers2.NewGetComponentsQueryHandler(iComponentRepository)
+	getEventsQueryHandler := handlers2.NewGetEventsQueryHandler(iEventRepository)
+	getTopicsQueryHandler := handlers2.NewGetTopicsQueryHandler(iTopicRepository)
+	getDomainQueryHandler := handlers2.NewGetDomainQueryHandler(iDomainRepository)
+	getTeamQueryHandler := handlers2.NewGetTeamQueryHandler(iTeamRepository)
+	getComponentQueryHandler := handlers2.NewGetComponentQueryHandler(iComponentRepository)
+	getEventQueryHandler := handlers2.NewGetEventQueryHandler(iEventRepository)
+	getTopicQueryHandler := handlers2.NewGetTopicQueryHandler(iTopicRepository)
+	mediatorInitializer := RegisterHandlers(specValidationCommandHandler, specPersistenceCommandHandler, getDomainsQueryHandler, getTeamsQueryHandler, getComponentsQueryHandler, getEventsQueryHandler, getTopicsQueryHandler, getDomainQueryHandler, getTeamQueryHandler, getComponentQueryHandler, getEventQueryHandler, getTopicQueryHandler)
 	app := &App{
-		SpecController: specController,
-		Mediator:       mediatorInitializer,
+		SpecController:  specController,
+		GraphController: graphController,
+		Mediator:        mediatorInitializer,
 	}
 	return app, nil
 }
@@ -50,27 +64,48 @@ func InitializeMediator() (*App, error) {
 // wire.go:
 
 type App struct {
-	SpecController *rest.SpecController
-	Mediator       *MediatorInitializer
+	SpecController  *rest.SpecController
+	GraphController *rest.GraphController
+	Mediator        *MediatorInitializer
 }
 
 type MediatorInitializer struct{}
 
-var ProviderSet = wire.NewSet(config.NewConfig, rest.NewSpecController, neo4j.NewNeo4jDriver, handlers.NewSpecValidationCommandHandler, handlers.NewSpecPersistenceCommandHandler, NewTeamRepository,
+var ProviderSet = wire.NewSet(config.NewConfig, rest.NewSpecController, rest.NewGraphController, neo4j.NewNeo4jDriver, handlers.NewSpecValidationCommandHandler, handlers.NewSpecPersistenceCommandHandler, handlers2.NewGetDomainsQueryHandler, handlers2.NewGetTeamsQueryHandler, handlers2.NewGetComponentsQueryHandler, handlers2.NewGetEventsQueryHandler, handlers2.NewGetTopicsQueryHandler, handlers2.NewGetDomainQueryHandler, handlers2.NewGetTeamQueryHandler, handlers2.NewGetComponentQueryHandler, handlers2.NewGetEventQueryHandler, handlers2.NewGetTopicQueryHandler, NewTeamRepository,
 	NewComponentRepository,
 	NewDomainRepository,
 	NewTopicRepository,
 	NewEventRepository,
 
-	RegisterCommandHandlers,
+	RegisterHandlers,
 )
 
-func RegisterCommandHandlers(
+func RegisterHandlers(
 	specHandler *handlers.SpecValidationCommandHandler,
 	specPersistenceHandler *handlers.SpecPersistenceCommandHandler,
+	getDomainsQueryHandler *handlers2.GetDomainsQueryHandler,
+	getTeamsQueryHandler *handlers2.GetTeamsQueryHandler,
+	getComponentsQueryHandler *handlers2.GetComponentsQueryHandler,
+	getEventsQueryHandler *handlers2.GetEventsQueryHandler,
+	getTopicsQueryHandler *handlers2.GetTopicsQueryHandler,
+	getDomainQueryHandler *handlers2.GetDomainQueryHandler,
+	getTeamQueryHandler *handlers2.GetTeamQueryHandler,
+	getComponentQueryHandler *handlers2.GetComponentQueryHandler,
+	getEventQueryHandler *handlers2.GetEventQueryHandler,
+	getTopicQueryHandler *handlers2.GetTopicQueryHandler,
 ) *MediatorInitializer {
 	mediator.Register(commands.SpecValidationCommandName, specHandler)
 	mediator.Register(commands.SpecPersictenceCommandName, specPersistenceHandler)
+	mediator.Register(queries.GetDomainsQueryName, getDomainsQueryHandler)
+	mediator.Register(queries.GetTeamsQueryName, getTeamsQueryHandler)
+	mediator.Register(queries.GetComponentsQueryName, getComponentsQueryHandler)
+	mediator.Register(queries.GetEventsQueryName, getEventsQueryHandler)
+	mediator.Register(queries.GetTopicsQueryName, getTopicsQueryHandler)
+	mediator.Register(queries.GetDomainQueryName, getDomainQueryHandler)
+	mediator.Register(queries.GetTeamQueryName, getTeamQueryHandler)
+	mediator.Register(queries.GetComponentQueryName, getComponentQueryHandler)
+	mediator.Register(queries.GetEventQueryName, getEventQueryHandler)
+	mediator.Register(queries.GetTopicQueryName, getTopicQueryHandler)
 
 	return &MediatorInitializer{}
 }
