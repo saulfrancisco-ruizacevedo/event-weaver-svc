@@ -2,11 +2,13 @@ package neo4j
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 
 	"github.com/rs/zerolog/log"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/infrastructure/config"
+	"github.com/saulfrancisco-ruizacevedo/go-neopersist"
 )
 
 func NewNeo4jDriver(cfg *config.Config) (neo4j.Driver, error) {
@@ -27,4 +29,18 @@ func NewNeo4jDriver(cfg *config.Config) (neo4j.Driver, error) {
 
 	log.Info().Msgf("Successfully connected to Neo4j database '%s'", cfg.DBName)
 	return driver, nil
+}
+
+func NewNeo4jExecutor(cfg *config.Config) (neopersist.DBRunner, error) {
+	executor, err := neopersist.NewNeo4jExecutor(cfg.Neo4jURI, cfg.Neo4jUser, cfg.Neo4jPassword, cfg.DBName)
+	if err != nil {
+		return nil, fmt.Errorf("could not create neo4j executor: %w", err)
+	}
+
+	if err := executor.Verify(context.Background()); err != nil {
+		return nil, fmt.Errorf("could not verify neo4j connection: %w", err)
+	}
+
+	log.Info().Msgf("Successfully connected to Neo4j database '%s' via go-neopersist", cfg.DBName)
+	return executor, nil
 }

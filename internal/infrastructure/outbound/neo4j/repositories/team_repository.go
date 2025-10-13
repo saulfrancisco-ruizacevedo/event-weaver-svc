@@ -4,35 +4,42 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/dtos/responses"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/domain/team"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/infrastructure/outbound/neo4j/mappers"
+	localModels "github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/infrastructure/outbound/neo4j/models"
+	"github.com/saulfrancisco-ruizacevedo/go-neopersist"
+	"github.com/saulfrancisco-ruizacevedo/gocypher"
 )
 
 type TeamRepository struct {
-	BaseRepository *BaseRepository
+	manager  *neopersist.PersistenceManager
+	teamRepo *neopersist.Repository[localModels.Team]
 }
 
-func NewTeamRepository(baseRepository *BaseRepository) team.ITeamRepository {
-	return &TeamRepository{
-		BaseRepository: baseRepository,
+func NewTeamRepository(manager *neopersist.PersistenceManager) (team.ITeamRepository, error) {
+	teamRepo, err := neopersist.RepositoryFor[localModels.Team](manager)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create team repository: %w", err)
 	}
+	return &TeamRepository{
+		manager:  manager,
+		teamRepo: teamRepo,
+	}, nil
 }
 
 var _ team.ITeamRepository = &TeamRepository{}
 
 func (r *TeamRepository) GetAllTeamNames(ctx context.Context) ([]*team.Team, error) {
-	query := `
-		MATCH (t:Team)
-		RETURN t.name AS name
-	`
+	qb := gocypher.NewQueryBuilder().
+		Match(gocypher.N("t", "Team")).
+		Return("t.name AS name")
 
-	records, err := r.BaseRepository.ExecQuery(ctx, query, nil)
+	modelTeams, err := r.teamRepo.Find(ctx, qb)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve team names: %w", err)
 	}
 
-	return mappers.RecordNamesListToTeamsList(records), nil
+	return mappers.ModelTeamListToDomainList(modelTeams), nil
 }
 
 func (r *TeamRepository) SaveAll(ctx context.Context, teams []*team.Team) error {
@@ -40,125 +47,7 @@ func (r *TeamRepository) SaveAll(ctx context.Context, teams []*team.Team) error 
 		return nil
 	}
 
-	query := `
-		UNWIND $teams AS t
-		MERGE (te:Team {name: t.name})
-		SET te.lead = t.lead,
-			te.email = t.email
-	`
+	modelTeams := mappers.DomainTeamListToModelList(teams)
 
-	params := map[string]interface{}{
-		"teams": make([]map[string]interface{}, len(teams)),
-	}
-
-	for i, team := range teams {
-		params["teams"].([]map[string]interface{})[i] = map[string]interface{}{
-			"name":  team.Name,
-			"lead":  team.Lead,
-			"email": team.Email,
-		}
-	}
-
-	_, err := r.BaseRepository.ExecQuery(ctx, query, params)
-	if err != nil {
-		return fmt.Errorf("failed to save teams: %w", err)
-	}
-
-	return nil
-}
-
-func (r *TeamRepository) GetAllTeams(ctx context.Context) (*responses.GraphResponseDto, error) {
-	return r.BaseRepository.GetAllNodes(ctx, "Team")
-}
-
-func (r *TeamRepository) GetTeam(ctx context.Context, teamName string) (*responses.GraphResponseDto, error) {
-	query := `
-		MATCH (t:Team {name: $teamName})
-		RETURN t
-	`
-	params := map[string]interface{}{"teamName": teamName}
-
-	records, err := r.BaseRepository.ExecQuery(ctx, query, params)
-	if err != nil {
-		return nil, err
-	}
-
-	nodes := r.BaseRepository.BuildNodes(records, "t")
-
-	return &responses.GraphResponseDto{
-		Nodes:         nodes,
-		Relationships: []responses.GraphRelationshipDto{},
-	}, nil
-}
-
-func (r *TeamRepository) GetTeamWithComponents(ctx context.Context, teamName string) (*responses.GraphResponseDto, error) {
-	query := `
-		MATCH (t:Team {name: $teamName})-[:MANAGES]->(c:Component)
-		RETURN t, c
-	`
-	params := map[string]interface{}{"teamName": teamName}
-
-	records, err := r.BaseRepository.ExecQuery(ctx, query, params)
-	if err != nil {
-		return nil, err
-	}
-
-	nodes := r.BaseRepository.BuildNodes(records, "t", "c")
-	rels := r.BaseRepository.BuildRelationships(records, []struct{ SourceKey, TargetKey, Type string }{
-		{"t", "c", "MANAGES"},
-	}...)
-
-	return &responses.GraphResponseDto{
-		Nodes:         nodes,
-		Relationships: rels,
-	}, nil
-}
-
-func (r *TeamRepository) GetTeamWithComponentsAndEvents(ctx context.Context, teamName string) (*responses.GraphResponseDto, error) {
-	query := `
-		MATCH (t:Team {name: $teamName})-[:MANAGES]->(c:Component)-[:PRODUCES]->(e:Event)
-		RETURN t, c, e
-	`
-	params := map[string]interface{}{"teamName": teamName}
-
-	records, err := r.BaseRepository.ExecQuery(ctx, query, params)
-	if err != nil {
-		return nil, err
-	}
-
-	nodes := r.BaseRepository.BuildNodes(records, "t", "c", "e")
-	rels := r.BaseRepository.BuildRelationships(records, []struct{ SourceKey, TargetKey, Type string }{
-		{"t", "c", "MANAGES"},
-		{"c", "e", "PRODUCES"},
-	}...)
-
-	return &responses.GraphResponseDto{
-		Nodes:         nodes,
-		Relationships: rels,
-	}, nil
-}
-
-func (r *TeamRepository) GetTeamWithComponentsAndEventsAndDomains(ctx context.Context, teamName string) (*responses.GraphResponseDto, error) {
-	query := `
-		MATCH (t:Team {name: $teamName})-[:MANAGES]->(c:Component)-[:PRODUCES]->(e:Event)-[:BELONGS_TO]->(d:Domain)
-		RETURN t, c, e, d
-	`
-	params := map[string]interface{}{"teamName": teamName}
-
-	records, err := r.BaseRepository.ExecQuery(ctx, query, params)
-	if err != nil {
-		return nil, err
-	}
-
-	nodes := r.BaseRepository.BuildNodes(records, "t", "c", "e", "d")
-	rels := r.BaseRepository.BuildRelationships(records, []struct{ SourceKey, TargetKey, Type string }{
-		{"t", "c", "MANAGES"},
-		{"c", "e", "PRODUCES"},
-		{"e", "d", "BELONGS_TO"},
-	}...)
-
-	return &responses.GraphResponseDto{
-		Nodes:         nodes,
-		Relationships: rels,
-	}, nil
+	return r.teamRepo.SaveAll(ctx, modelTeams)
 }

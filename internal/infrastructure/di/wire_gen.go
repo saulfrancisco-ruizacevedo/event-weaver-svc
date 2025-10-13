@@ -8,11 +8,8 @@ package di
 
 import (
 	"github.com/google/wire"
-	neo4j2 "github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/commands"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/commands/handlers"
-	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/queries"
-	handlers2 "github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/application/queries/handlers"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/domain/component"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/domain/domainentity"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/domain/event"
@@ -23,40 +20,45 @@ import (
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/infrastructure/outbound/neo4j"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/internal/infrastructure/outbound/neo4j/repositories"
 	"github.com/saulfrancisco-ruizacevedo/event-weaver-svc/mediator"
+	"github.com/saulfrancisco-ruizacevedo/go-neopersist"
 )
 
 // Injectors from wire.go:
 
 func InitializeMediator() (*App, error) {
 	specController := rest.NewSpecController()
-	graphController := rest.NewGraphController()
 	configConfig := config.NewConfig()
-	driver, err := neo4j.NewNeo4jDriver(configConfig)
+	dbRunner, err := neo4j.NewNeo4jExecutor(configConfig)
 	if err != nil {
 		return nil, err
 	}
-	iTeamRepository := NewTeamRepository(driver, configConfig)
-	iComponentRepository := NewComponentRepository(driver, configConfig)
-	iDomainRepository := NewDomainRepository(driver, configConfig)
-	iTopicRepository := NewTopicRepository(driver, configConfig)
-	iEventRepository := NewEventRepository(driver, configConfig)
+	persistenceManager := neopersist.NewPersistenceManager(dbRunner)
+	iTeamRepository, err := NewTeamRepository(persistenceManager)
+	if err != nil {
+		return nil, err
+	}
+	iComponentRepository, err := NewComponentRepository(persistenceManager)
+	if err != nil {
+		return nil, err
+	}
+	iDomainRepository, err := NewDomainRepository(persistenceManager)
+	if err != nil {
+		return nil, err
+	}
+	iTopicRepository, err := NewTopicRepository(persistenceManager)
+	if err != nil {
+		return nil, err
+	}
+	iEventRepository, err := NewEventRepository(persistenceManager)
+	if err != nil {
+		return nil, err
+	}
 	specValidationCommandHandler := handlers.NewSpecValidationCommandHandler(iTeamRepository, iComponentRepository, iDomainRepository, iTopicRepository, iEventRepository)
 	specPersistenceCommandHandler := handlers.NewSpecPersistenceCommandHandler(iTeamRepository, iComponentRepository, iDomainRepository, iTopicRepository, iEventRepository)
-	getDomainsQueryHandler := handlers2.NewGetDomainsQueryHandler(iDomainRepository)
-	getTeamsQueryHandler := handlers2.NewGetTeamsQueryHandler(iTeamRepository)
-	getComponentsQueryHandler := handlers2.NewGetComponentsQueryHandler(iComponentRepository)
-	getEventsQueryHandler := handlers2.NewGetEventsQueryHandler(iEventRepository)
-	getTopicsQueryHandler := handlers2.NewGetTopicsQueryHandler(iTopicRepository)
-	getDomainQueryHandler := handlers2.NewGetDomainQueryHandler(iDomainRepository)
-	getTeamQueryHandler := handlers2.NewGetTeamQueryHandler(iTeamRepository)
-	getComponentQueryHandler := handlers2.NewGetComponentQueryHandler(iComponentRepository)
-	getEventQueryHandler := handlers2.NewGetEventQueryHandler(iEventRepository)
-	getTopicQueryHandler := handlers2.NewGetTopicQueryHandler(iTopicRepository)
-	mediatorInitializer := RegisterHandlers(specValidationCommandHandler, specPersistenceCommandHandler, getDomainsQueryHandler, getTeamsQueryHandler, getComponentsQueryHandler, getEventsQueryHandler, getTopicsQueryHandler, getDomainQueryHandler, getTeamQueryHandler, getComponentQueryHandler, getEventQueryHandler, getTopicQueryHandler)
+	mediatorInitializer := RegisterHandlers(specValidationCommandHandler, specPersistenceCommandHandler)
 	app := &App{
-		SpecController:  specController,
-		GraphController: graphController,
-		Mediator:        mediatorInitializer,
+		SpecController: specController,
+		Mediator:       mediatorInitializer,
 	}
 	return app, nil
 }
@@ -64,14 +66,13 @@ func InitializeMediator() (*App, error) {
 // wire.go:
 
 type App struct {
-	SpecController  *rest.SpecController
-	GraphController *rest.GraphController
-	Mediator        *MediatorInitializer
+	SpecController *rest.SpecController
+	Mediator       *MediatorInitializer
 }
 
 type MediatorInitializer struct{}
 
-var ProviderSet = wire.NewSet(config.NewConfig, rest.NewSpecController, rest.NewGraphController, neo4j.NewNeo4jDriver, handlers.NewSpecValidationCommandHandler, handlers.NewSpecPersistenceCommandHandler, handlers2.NewGetDomainsQueryHandler, handlers2.NewGetTeamsQueryHandler, handlers2.NewGetComponentsQueryHandler, handlers2.NewGetEventsQueryHandler, handlers2.NewGetTopicsQueryHandler, handlers2.NewGetDomainQueryHandler, handlers2.NewGetTeamQueryHandler, handlers2.NewGetComponentQueryHandler, handlers2.NewGetEventQueryHandler, handlers2.NewGetTopicQueryHandler, NewTeamRepository,
+var ProviderSet = wire.NewSet(config.NewConfig, rest.NewSpecController, neo4j.NewNeo4jDriver, neo4j.NewNeo4jExecutor, neopersist.NewPersistenceManager, handlers.NewSpecValidationCommandHandler, handlers.NewSpecPersistenceCommandHandler, NewTeamRepository,
 	NewComponentRepository,
 	NewDomainRepository,
 	NewTopicRepository,
@@ -83,74 +84,28 @@ var ProviderSet = wire.NewSet(config.NewConfig, rest.NewSpecController, rest.New
 func RegisterHandlers(
 	specHandler *handlers.SpecValidationCommandHandler,
 	specPersistenceHandler *handlers.SpecPersistenceCommandHandler,
-	getDomainsQueryHandler *handlers2.GetDomainsQueryHandler,
-	getTeamsQueryHandler *handlers2.GetTeamsQueryHandler,
-	getComponentsQueryHandler *handlers2.GetComponentsQueryHandler,
-	getEventsQueryHandler *handlers2.GetEventsQueryHandler,
-	getTopicsQueryHandler *handlers2.GetTopicsQueryHandler,
-	getDomainQueryHandler *handlers2.GetDomainQueryHandler,
-	getTeamQueryHandler *handlers2.GetTeamQueryHandler,
-	getComponentQueryHandler *handlers2.GetComponentQueryHandler,
-	getEventQueryHandler *handlers2.GetEventQueryHandler,
-	getTopicQueryHandler *handlers2.GetTopicQueryHandler,
 ) *MediatorInitializer {
 	mediator.Register(commands.SpecValidationCommandName, specHandler)
 	mediator.Register(commands.SpecPersictenceCommandName, specPersistenceHandler)
-	mediator.Register(queries.GetDomainsQueryName, getDomainsQueryHandler)
-	mediator.Register(queries.GetTeamsQueryName, getTeamsQueryHandler)
-	mediator.Register(queries.GetComponentsQueryName, getComponentsQueryHandler)
-	mediator.Register(queries.GetEventsQueryName, getEventsQueryHandler)
-	mediator.Register(queries.GetTopicsQueryName, getTopicsQueryHandler)
-	mediator.Register(queries.GetDomainQueryName, getDomainQueryHandler)
-	mediator.Register(queries.GetTeamQueryName, getTeamQueryHandler)
-	mediator.Register(queries.GetComponentQueryName, getComponentQueryHandler)
-	mediator.Register(queries.GetEventQueryName, getEventQueryHandler)
-	mediator.Register(queries.GetTopicQueryName, getTopicQueryHandler)
-
 	return &MediatorInitializer{}
 }
 
-func NewTeamRepository(driver neo4j2.Driver, cfg *config.Config) team.ITeamRepository {
-	return &repositories.TeamRepository{
-		BaseRepository: &repositories.BaseRepository{
-			Driver: driver,
-			DbName: cfg.DBName,
-		},
-	}
+func NewTeamRepository(manager *neopersist.PersistenceManager) (team.ITeamRepository, error) {
+	return repositories.NewTeamRepository(manager)
 }
 
-func NewComponentRepository(driver neo4j2.Driver, cfg *config.Config) component.IComponentRepository {
-	return &repositories.ComponentRepository{
-		BaseRepository: &repositories.BaseRepository{
-			Driver: driver,
-			DbName: cfg.DBName,
-		},
-	}
+func NewComponentRepository(manager *neopersist.PersistenceManager) (component.IComponentRepository, error) {
+	return repositories.NewComponentRepository(manager)
 }
 
-func NewDomainRepository(driver neo4j2.Driver, cfg *config.Config) domainentity.IDomainRepository {
-	return &repositories.DomainRepository{
-		BaseRepository: &repositories.BaseRepository{
-			Driver: driver,
-			DbName: cfg.DBName,
-		},
-	}
+func NewDomainRepository(manager *neopersist.PersistenceManager) (domainentity.IDomainRepository, error) {
+	return repositories.NewDomainRepository(manager)
 }
 
-func NewTopicRepository(driver neo4j2.Driver, cfg *config.Config) topic.ITopicRepository {
-	return &repositories.TopicRepository{
-		BaseRepository: &repositories.BaseRepository{
-			Driver: driver,
-			DbName: cfg.DBName,
-		},
-	}
+func NewTopicRepository(manager *neopersist.PersistenceManager) (topic.ITopicRepository, error) {
+	return repositories.NewTopicRepository(manager)
 }
 
-func NewEventRepository(driver neo4j2.Driver, cfg *config.Config) event.IEventRepository {
-	return &repositories.EventRepository{
-		BaseRepository: &repositories.BaseRepository{
-			Driver: driver,
-			DbName: cfg.DBName,
-		},
-	}
+func NewEventRepository(manager *neopersist.PersistenceManager) (event.IEventRepository, error) {
+	return repositories.NewEventRepository(manager)
 }
